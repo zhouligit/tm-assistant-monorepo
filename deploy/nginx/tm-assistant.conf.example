@@ -1,0 +1,55 @@
+server {
+    listen 80;
+    server_name your-domain.com;
+
+    # 外部统一入口：域名 + path，不暴露端口
+    # tm 主业务入口 -> api-gateway
+    location /api/v1/tm/ {
+        proxy_pass http://127.0.0.1:18000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # 可选：内部服务path（建议仅内网/白名单访问）
+    location /api/v1/tm-core/ {
+        allow 127.0.0.1;
+        allow 10.0.0.0/8;
+        allow 172.16.0.0/12;
+        allow 192.168.0.0/16;
+        # allow 1.2.3.4;  # 按需加入办公网出口IP
+        deny all;
+
+        proxy_pass http://127.0.0.1:18001;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /api/v1/tm-connector/ {
+        allow 127.0.0.1;
+        allow 10.0.0.0/8;
+        allow 172.16.0.0/12;
+        allow 192.168.0.0/16;
+        # allow 1.2.3.4;  # 按需加入办公网出口IP
+        deny all;
+
+        proxy_pass http://127.0.0.1:18002;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # 前端静态文件示意（按你的部署路径调整）
+    location / {
+        root /opt/tm-assistant-monorepo/console-web-dist;
+        index index.html;
+        try_files $uri /index.html;
+    }
+}

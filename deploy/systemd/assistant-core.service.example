@@ -1,0 +1,16 @@
+[Unit]
+Description=TM Assistant Core Service
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/tm-assistant-monorepo/assistant-core
+EnvironmentFile=/opt/tm-assistant-monorepo/.env
+ExecStart=/opt/tm-assistant-monorepo/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 18001
+Restart=always
+RestartSec=3
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
