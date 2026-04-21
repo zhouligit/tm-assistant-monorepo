@@ -64,7 +64,7 @@ DOMAIN=your-domain.com REPO_URL=https://github.com/yourname/tm-assistant-monorep
 
 可选环境变量：
 - `APP_DIR`（默认 `/opt/tm-assistant-monorepo`）
-- `MYSQL_PASSWORD`（默认 `123445`，用于 `tm_app` 数据库用户）
+- `MYSQL_PASSWORD`（默认 `123456`，用于 `tm_app` 数据库用户）
 - `REDIS_PASSWORD`（默认 `123456`）
 - `PYTHON_BIN`（默认 `python3`）
 - `API_GATEWAY_PORT`（默认 `18000`）
