@@ -66,6 +66,7 @@ DOMAIN=your-domain.com REPO_URL=https://github.com/yourname/tm-assistant-monorep
 - `APP_DIR`（默认 `/opt/tm-assistant-monorepo`）
 - `MYSQL_PASSWORD`（默认 `123456`）
 - `REDIS_PASSWORD`（默认 `123456`）
+- `PYTHON_BIN`（默认 `python3`）
 - `API_GATEWAY_PORT`（默认 `18000`）
 - `ASSISTANT_CORE_PORT`（默认 `18001`）
 - `CONNECTOR_SERVICE_PORT`（默认 `18002`）

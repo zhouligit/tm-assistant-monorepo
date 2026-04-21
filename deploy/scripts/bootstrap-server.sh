@@ -16,6 +16,7 @@ REDIS_PASSWORD="${REDIS_PASSWORD:-123456}"
 API_GATEWAY_PORT="${API_GATEWAY_PORT:-18000}"
 ASSISTANT_CORE_PORT="${ASSISTANT_CORE_PORT:-18001}"
 CONNECTOR_SERVICE_PORT="${CONNECTOR_SERVICE_PORT:-18002}"
+PYTHON_BIN="${PYTHON_BIN:-python3}"
 
 if [[ -z "${DOMAIN}" || -z "${REPO_URL}" ]]; then
   echo "Missing required env: DOMAIN and REPO_URL"
@@ -52,7 +53,7 @@ EOF
 
 log "Install base packages"
 apt update
-apt install -y git curl nginx mysql-server redis-server python3.11 python3.11-venv python3-pip
+apt install -y git curl nginx mysql-server redis-server python3 python3-venv python3-pip
 systemctl enable nginx mysql redis
 systemctl restart nginx mysql redis
 
@@ -85,7 +86,7 @@ fi
 
 log "Install Python dependencies"
 for svc in api-gateway assistant-core connector-service; do
-  python3.11 -m venv "${APP_DIR}/${svc}/.venv"
+  "${PYTHON_BIN}" -m venv "${APP_DIR}/${svc}/.venv"
   "${APP_DIR}/${svc}/.venv/bin/pip" install -U pip
   "${APP_DIR}/${svc}/.venv/bin/pip" install -r "${APP_DIR}/${svc}/requirements.txt"
 done
