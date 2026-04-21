@@ -6,7 +6,7 @@ from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 
 MYSQL_DSN = os.getenv(
-    "MYSQL_DSN", "mysql+pymysql://root:123456@127.0.0.1:3306/tm_assistant"
+    "MYSQL_DSN", "mysql+pymysql://tm_app:123445@127.0.0.1:3306/tm_assistant"
 )
 
 engine = create_engine(MYSQL_DSN, pool_pre_ping=True)

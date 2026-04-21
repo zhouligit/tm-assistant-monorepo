@@ -11,7 +11,7 @@ set -euo pipefail
 DOMAIN="${DOMAIN:-}"
 REPO_URL="${REPO_URL:-}"
 APP_DIR="${APP_DIR:-/opt/tm-assistant-monorepo}"
-MYSQL_PASSWORD="${MYSQL_PASSWORD:-123456}"
+MYSQL_PASSWORD="${MYSQL_PASSWORD:-123445}"
 REDIS_PASSWORD="${REDIS_PASSWORD:-123456}"
 API_GATEWAY_PORT="${API_GATEWAY_PORT:-18000}"
 ASSISTANT_CORE_PORT="${ASSISTANT_CORE_PORT:-18001}"
@@ -78,7 +78,10 @@ systemctl enable "${NGINX_SERVICE}" "${MYSQL_SERVICE}" "${REDIS_SERVICE}"
 systemctl restart "${NGINX_SERVICE}" "${MYSQL_SERVICE}" "${REDIS_SERVICE}"
 
 log "Set MySQL and Redis passwords"
-mysql -uroot -e "ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '${MYSQL_PASSWORD}'; FLUSH PRIVILEGES;"
+mysql -uroot -e "CREATE DATABASE IF NOT EXISTS tm_assistant DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+mysql -uroot -e "CREATE USER IF NOT EXISTS 'tm_app'@'127.0.0.1' IDENTIFIED BY '${MYSQL_PASSWORD}';"
+mysql -uroot -e "ALTER USER 'tm_app'@'127.0.0.1' IDENTIFIED BY '${MYSQL_PASSWORD}';"
+mysql -uroot -e "GRANT ALL PRIVILEGES ON tm_assistant.* TO 'tm_app'@'127.0.0.1'; FLUSH PRIVILEGES;"
 sed -i "s/^#\? *requirepass .*/requirepass ${REDIS_PASSWORD}/" /etc/redis/redis.conf
 systemctl restart "${REDIS_SERVICE}"
 
@@ -93,7 +96,7 @@ fi
 
 log "Write .env from template"
 cp "${APP_DIR}/.env.example" "${APP_DIR}/.env"
-sed -i "s#^MYSQL_DSN=.*#MYSQL_DSN=mysql+pymysql://root:${MYSQL_PASSWORD}@127.0.0.1:3306/tm_assistant#" "${APP_DIR}/.env"
+sed -i "s#^MYSQL_DSN=.*#MYSQL_DSN=mysql+pymysql://tm_app:${MYSQL_PASSWORD}@127.0.0.1:3306/tm_assistant#" "${APP_DIR}/.env"
 sed -i "s#^REDIS_URL=.*#REDIS_URL=redis://:${REDIS_PASSWORD}@127.0.0.1:6379/0#" "${APP_DIR}/.env"
 sed -i "s#^API_GATEWAY_PORT=.*#API_GATEWAY_PORT=${API_GATEWAY_PORT}#" "${APP_DIR}/.env"
 sed -i "s#^ASSISTANT_CORE_PORT=.*#ASSISTANT_CORE_PORT=${ASSISTANT_CORE_PORT}#" "${APP_DIR}/.env"
