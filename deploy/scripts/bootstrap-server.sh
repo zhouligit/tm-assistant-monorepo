@@ -29,6 +29,16 @@ log() {
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"
 }
 
+first_existing_service() {
+  for svc in "$@"; do
+    if systemctl list-unit-files --type=service --no-legend | awk '{print $1}' | rg -q "^${svc}\.service$"; then
+      echo "${svc}"
+      return 0
+    fi
+  done
+  return 1
+}
+
 write_service_file() {
   local service_name="$1"
   local workdir="$2"
@@ -54,13 +64,23 @@ EOF
 log "Install base packages"
 apt update
 apt install -y git curl nginx mysql-server redis-server python3 python3-venv python3-pip
-systemctl enable nginx mysql redis
-systemctl restart nginx mysql redis
+
+MYSQL_SERVICE="$(first_existing_service mysql mysqld)"
+REDIS_SERVICE="$(first_existing_service redis-server redis)"
+NGINX_SERVICE="$(first_existing_service nginx)"
+
+if [[ -z "${MYSQL_SERVICE:-}" || -z "${REDIS_SERVICE:-}" || -z "${NGINX_SERVICE:-}" ]]; then
+  echo "Cannot detect required system services (nginx/mysql/redis)."
+  exit 1
+fi
+
+systemctl enable "${NGINX_SERVICE}" "${MYSQL_SERVICE}" "${REDIS_SERVICE}"
+systemctl restart "${NGINX_SERVICE}" "${MYSQL_SERVICE}" "${REDIS_SERVICE}"
 
 log "Set MySQL and Redis passwords"
 mysql -uroot -e "ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '${MYSQL_PASSWORD}'; FLUSH PRIVILEGES;"
 sed -i "s/^#\? *requirepass .*/requirepass ${REDIS_PASSWORD}/" /etc/redis/redis.conf
-systemctl restart redis
+systemctl restart "${REDIS_SERVICE}"
 
 log "Prepare project directory"
 mkdir -p /opt
