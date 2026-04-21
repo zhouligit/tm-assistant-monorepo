@@ -31,7 +31,7 @@ log() {
 
 first_existing_service() {
   for svc in "$@"; do
-    if systemctl list-unit-files --type=service --no-legend | awk '{print $1}' | rg -q "^${svc}\.service$"; then
+    if systemctl list-unit-files --type=service --no-legend | awk '{print $1}' | grep -Eq "^${svc}\.service$"; then
       echo "${svc}"
       return 0
     fi
