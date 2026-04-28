@@ -1,7 +1,9 @@
 import logging
+import os
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.routers import (
@@ -19,6 +21,19 @@ from app.schemas import fail, request_id_ctx
 
 app = FastAPI(title="API Gateway")
 logger = logging.getLogger("api-gateway")
+
+_cors_origins_raw = os.getenv(
+    "CORS_ALLOW_ORIGINS",
+    "http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001,http://127.0.0.1:3001",
+)
+_cors_allow_origins = [x.strip() for x in _cors_origins_raw.split(",") if x.strip()]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_allow_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.exception_handler(HTTPException)
