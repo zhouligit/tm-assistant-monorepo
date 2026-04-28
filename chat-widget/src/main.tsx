@@ -22,8 +22,16 @@ type WidgetConfig = {
   channel: string;
 };
 
+function normalizeBaseUrl(raw: string): string {
+  return raw.replace(/\/+$/, "");
+}
+
+const ENV_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "";
+const WINDOW_BASE_URL = (window as { TM_CHAT_WIDGET_BASE_URL?: string }).TM_CHAT_WIDGET_BASE_URL ?? "";
+const RESOLVED_BASE_URL = normalizeBaseUrl(WINDOW_BASE_URL || ENV_BASE_URL || window.location.origin);
+
 const DEFAULT_CONFIG: WidgetConfig = {
-  baseUrl: (window as { TM_CHAT_WIDGET_BASE_URL?: string }).TM_CHAT_WIDGET_BASE_URL ?? "",
+  baseUrl: RESOLVED_BASE_URL,
   visitorId: `visitor_${Math.random().toString(36).slice(2, 10)}`,
   channel: "web_widget",
 };
