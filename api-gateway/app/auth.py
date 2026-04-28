@@ -4,50 +4,81 @@ from typing import Any
 
 import jwt
 from fastapi import Header, HTTPException
+from passlib.context import CryptContext
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.entities import User
 
 JWT_SECRET = os.getenv("JWT_SECRET", "replace_me")
 JWT_ALG = "HS256"
 JWT_EXPIRE_HOURS = int(os.getenv("JWT_EXPIRE_HOURS", "24"))
-
-DEMO_USER = {
-    "id": "u_2002",
-    "name": "Admin Demo",
-    "role": "tenant_admin",
-    "tenant_id": "1001",
-    "email": os.getenv("DEMO_ADMIN_EMAIL", "admin@demo.com"),
-    "password": os.getenv("DEMO_ADMIN_PASSWORD", "123456"),
-}
+REFRESH_EXPIRE_DAYS = int(os.getenv("JWT_REFRESH_EXPIRE_DAYS", "14"))
+PWD_CONTEXT = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
-def authenticate(email: str, password: str) -> dict[str, Any] | None:
-    if email == DEMO_USER["email"] and password == DEMO_USER["password"]:
-        return {
-            "id": DEMO_USER["id"],
-            "name": DEMO_USER["name"],
-            "role": DEMO_USER["role"],
-            "tenant_id": DEMO_USER["tenant_id"],
-            "email": DEMO_USER["email"],
-        }
-    return None
+def _verify_password(plain_password: str, password_hash: str) -> bool:
+    # Keep backward compatibility for pre-hash seed data.
+    if password_hash.startswith("$2"):
+        return PWD_CONTEXT.verify(plain_password, password_hash)
+    return plain_password == password_hash
 
 
-def create_access_token(user: dict[str, Any]) -> str:
-    now = datetime.now(timezone.utc)
+def authenticate(db: Session, email: str, password: str) -> dict[str, Any] | None:
+    user = db.execute(select(User).where(User.email == email, User.status == 1)).scalar_one_or_none()
+    if not user:
+        return None
+    if not _verify_password(password, user.password_hash):
+        return None
+    return {
+        "id": str(user.id),
+        "name": user.name,
+        "role": user.role,
+        "tenant_id": str(user.tenant_id),
+        "email": user.email,
+    }
+
+
+def _create_token(user: dict[str, Any], expires_at: datetime, token_type: str) -> str:
     payload = {
         "sub": user["id"],
         "tenant_id": user["tenant_id"],
         "role": user["role"],
         "name": user["name"],
         "email": user["email"],
-        "iat": int(now.timestamp()),
-        "exp": int((now + timedelta(hours=JWT_EXPIRE_HOURS)).timestamp()),
+        "type": token_type,
+        "iat": int(datetime.now(timezone.utc).timestamp()),
+        "exp": int(expires_at.timestamp()),
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALG)
 
 
+def create_access_token(user: dict[str, Any]) -> str:
+    now = datetime.now(timezone.utc)
+    return _create_token(user, now + timedelta(hours=JWT_EXPIRE_HOURS), "access")
+
+
+def create_refresh_token(user: dict[str, Any]) -> str:
+    now = datetime.now(timezone.utc)
+    return _create_token(user, now + timedelta(days=REFRESH_EXPIRE_DAYS), "refresh")
+
+
 def decode_access_token(token: str) -> dict[str, Any]:
     try:
-        return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALG])
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALG])
+        if payload.get("type") != "access":
+            raise HTTPException(status_code=401, detail="invalid access token")
+        return payload
+    except jwt.InvalidTokenError as exc:
+        raise HTTPException(status_code=401, detail="invalid token") from exc
+
+
+def decode_refresh_token(token: str) -> dict[str, Any]:
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALG])
+        if payload.get("type") != "refresh":
+            raise HTTPException(status_code=401, detail="invalid refresh token")
+        return payload
     except jwt.InvalidTokenError as exc:
         raise HTTPException(status_code=401, detail="invalid token") from exc
 

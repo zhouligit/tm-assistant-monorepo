@@ -15,9 +15,9 @@ ON DUPLICATE KEY UPDATE
 
 INSERT INTO users (id, tenant_id, email, name, role, password_hash, status, last_login_at)
 VALUES
-  (2001, 1001, 'owner@demo.com', 'Owner Demo', 'owner', '$2b$12$placeholder_owner_hash', 1, NOW()),
-  (2002, 1001, 'admin@demo.com', 'Admin Demo', 'tenant_admin', '$2b$12$placeholder_admin_hash', 1, NOW()),
-  (2003, 1001, 'agent@demo.com', 'Agent Demo', 'agent', '$2b$12$placeholder_agent_hash', 1, NOW())
+  (2001, 1001, 'owner@demo.com', 'Owner Demo', 'owner', '123456', 1, NOW()),
+  (2002, 1001, 'admin@demo.com', 'Admin Demo', 'tenant_admin', '123456', 1, NOW()),
+  (2003, 1001, 'agent@demo.com', 'Agent Demo', 'agent', '123456', 1, NOW())
 ON DUPLICATE KEY UPDATE
   tenant_id = VALUES(tenant_id),
   name = VALUES(name),

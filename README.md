@@ -89,6 +89,7 @@
 - 详见：`docs/runbook.md`
 - Mock/占位实现追踪：`docs/mock-tracker.md`
 - 导出后30天路线图：`docs/roadmap-next-30-days.md`
+- 场景一三阶段实施计划：`docs/roadmap-scenario1-three-phases.md`
 - 远程部署最短清单（HTTP）：`docs/deploy-shortlist-from-zero.md`
 - HTTPS 最短清单（Certbot）：`docs/deploy-https-certbot-shortlist.md`
 

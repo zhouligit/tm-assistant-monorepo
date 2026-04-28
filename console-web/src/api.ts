@@ -63,6 +63,7 @@ export type LoginData = {
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:18000";
 const TOKEN_KEY = "tm_access_token";
+const REFRESH_TOKEN_KEY = "tm_refresh_token";
 const AUTH_EXPIRED_EVENT = "tm-auth-expired";
 
 export class ApiError extends Error {
@@ -89,9 +90,9 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<ApiResponse<T>> {
+async function doRequest<T>(path: string, init?: RequestInit): Promise<Response> {
   const token = localStorage.getItem(TOKEN_KEY);
-  const res = await fetch(`${BASE_URL}${path}`, {
+  return fetch(`${BASE_URL}${path}`, {
     headers: {
       "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -99,6 +100,56 @@ async function request<T>(path: string, init?: RequestInit): Promise<ApiResponse
     },
     ...init,
   });
+}
+
+let refreshingPromise: Promise<void> | null = null;
+
+async function refreshAccessToken(): Promise<void> {
+  if (refreshingPromise) {
+    return refreshingPromise;
+  }
+  const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
+  if (!refreshToken) {
+    throw new Error("missing refresh token");
+  }
+  refreshingPromise = (async () => {
+    const res = await fetch(`${BASE_URL}/api/v1/tm/auth/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+    if (!res.ok) {
+      throw new Error("refresh token failed");
+    }
+    const payload = (await res.json()) as ApiResponse<{ access_token: string; refresh_token: string }>;
+    if (!payload.data?.access_token || !payload.data?.refresh_token) {
+      throw new Error("refresh response missing tokens");
+    }
+    setAuthTokens(payload.data.access_token, payload.data.refresh_token);
+  })();
+  try {
+    await refreshingPromise;
+  } finally {
+    refreshingPromise = null;
+  }
+}
+
+async function request<T>(path: string, init?: RequestInit, allowRefresh = true): Promise<ApiResponse<T>> {
+  let res = await doRequest<T>(path, init);
+  if (
+    res.status === 401 &&
+    allowRefresh &&
+    path !== "/api/v1/tm/auth/login" &&
+    path !== "/api/v1/tm/auth/refresh"
+  ) {
+    try {
+      await refreshAccessToken();
+      res = await doRequest<T>(path, init);
+    } catch {
+      clearAccessToken();
+      window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
+    }
+  }
   if (!res.ok) {
     let detail = "";
     let requestId = "";
@@ -147,8 +198,14 @@ export function setAccessToken(token: string) {
   localStorage.setItem(TOKEN_KEY, token);
 }
 
+export function setAuthTokens(accessToken: string, refreshToken: string) {
+  localStorage.setItem(TOKEN_KEY, accessToken);
+  localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
+}
+
 export function clearAccessToken() {
   localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(REFRESH_TOKEN_KEY);
 }
 
 export function getAccessToken() {

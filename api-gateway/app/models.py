@@ -8,6 +8,10 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
+
+
 class KnowledgeSourceCreateRequest(BaseModel):
     type: str = Field(description="feishu_doc/web_url/pdf/faq")
     name: str

@@ -32,7 +32,7 @@ import {
   onAuthExpired,
   rejectKbCandidate,
   replyHandoff,
-  setAccessToken,
+  setAuthTokens,
   type CandidateRejectInput,
   type KbCandidateItem,
   type LoginInput,
@@ -418,10 +418,10 @@ export default function App() {
       const values = await loginForm.validateFields();
       setLoginLoading(true);
       const res = await login(values);
-      if (!res.data?.access_token) {
-        throw new Error("登录响应缺少 access_token");
+      if (!res.data?.access_token || !res.data?.refresh_token) {
+        throw new Error("登录响应缺少 token");
       }
-      setAccessToken(res.data.access_token);
+      setAuthTokens(res.data.access_token, res.data.refresh_token);
       setAuthed(true);
       setLastRequestId(res.request_id ?? "-");
       pushHistory({
@@ -492,7 +492,7 @@ export default function App() {
       const rows = res.data?.list ?? res.data?.items ?? [];
       setKnowledgeRows(rows);
       return res;
-    }, "/api/v1/tm/knowledge/sources");
+    }, "/api/v1/tm/knowledge-sources");
   };
 
   const runHandoff = async () => {
@@ -501,7 +501,7 @@ export default function App() {
       const rows = res.data?.list ?? res.data?.items ?? [];
       setHandoffRows(rows);
       return res;
-    }, "/api/v1/tm/handoff/tickets");
+    }, "/api/v1/tm/handoff/queue");
   };
 
   const runCandidates = async () => {
@@ -510,7 +510,7 @@ export default function App() {
       const rows = res.data?.list ?? res.data?.items ?? [];
       setCandidateRows(rows);
       return res;
-    }, "/api/v1/tm/knowledge/kb-candidates");
+    }, "/api/v1/tm/kb-candidates");
   };
 
   const submitCreateKnowledgeSource = async () => {
