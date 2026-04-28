@@ -34,6 +34,34 @@
 bash scripts/demo_education_flow.sh
 ```
 
+### 官网 Web 聊天入口（已实现）
+
+`chat-widget` 已支持最小可嵌入聊天窗，直接对接 `/api/v1/tm/chat/*`：
+
+- 自动创建会话
+- 发送消息并展示机器人回复
+- 展示置信度与“是否建议转人工”状态
+
+本地调试：
+
+```bash
+cd chat-widget
+npm install
+npm run dev
+```
+
+## 2.1 企业渠道 mock 入口（已实现）
+
+`connector-service` 已提供企微/飞书 webhook mock：
+
+- `POST /webhook/feishu`
+- `POST /webhook/wecom`
+- `GET /webhook/events`（查看最近接收事件）
+
+签名校验开关：
+- `CONNECTOR_VERIFY_SIGNATURE=false`（默认关闭）
+- 打开后校验 `X-Signature`。
+
 ## 3) 喂第一批知识（最关键）
 
 本仓库已提供教育机构首批知识 SQL：

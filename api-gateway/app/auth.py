@@ -88,3 +88,12 @@ def require_current_user(authorization: str | None = Header(default=None)) -> di
         raise HTTPException(status_code=401, detail="missing bearer token")
     token = authorization.removeprefix("Bearer ").strip()
     return decode_access_token(token)
+
+
+def optional_current_user(authorization: str | None = Header(default=None)) -> dict[str, Any] | None:
+    if not authorization:
+        return None
+    if not authorization.startswith("Bearer "):
+        return None
+    token = authorization.removeprefix("Bearer ").strip()
+    return decode_access_token(token)
