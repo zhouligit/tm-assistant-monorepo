@@ -2,7 +2,7 @@ import hashlib
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -13,6 +13,20 @@ from app.schemas import ApiResponse, ok
 
 router = APIRouter(prefix="/internal/core/handoff", tags=["handoff"])
 KB_FEEDBACK_SOURCE_NAME = "人工回流知识"
+
+
+def _resolve_user_id(db: Session, user_id: int | None) -> int | None:
+    """
+    kb_candidates.reviewed_by / knowledge_sources.created_by 都带外键约束。
+    在某些场景（如演示 curl 或 header 缺失/错误）user_id 可能不存在，从而导致 approve 失败。
+    这里做个安全兜底：若 user_id 不存在，则取任意一个 users.id 作为回退。
+    """
+    if user_id is not None:
+        found = db.execute(text("SELECT id FROM users WHERE id = :id LIMIT 1"), {"id": user_id}).scalar_one_or_none()
+        if found is not None:
+            return int(found)
+    fallback = db.execute(text("SELECT id FROM users ORDER BY id ASC LIMIT 1")).scalar_one_or_none()
+    return int(fallback) if fallback is not None else None
 
 
 @router.get("/queue", response_model=ApiResponse)
@@ -93,7 +107,7 @@ def reply(
     return ok({"reply_id": str(reply_row.id), "saved": True, "candidate_id": str(candidate_id) if candidate_id else None})
 
 
-def _ensure_feedback_source(db: Session, tenant_id: int, user_id: int) -> KnowledgeSource:
+def _ensure_feedback_source(db: Session, tenant_id: int, created_by: int) -> KnowledgeSource:
     row = db.execute(
         select(KnowledgeSource)
         .where(KnowledgeSource.tenant_id == tenant_id, KnowledgeSource.name == KB_FEEDBACK_SOURCE_NAME)
@@ -107,7 +121,7 @@ def _ensure_feedback_source(db: Session, tenant_id: int, user_id: int) -> Knowle
         name=KB_FEEDBACK_SOURCE_NAME,
         config_json={"source": "handoff_feedback", "version": "v1"},
         status="ready",
-        created_by=user_id,
+        created_by=created_by,
     )
     db.add(row)
     db.flush()
@@ -224,10 +238,13 @@ def approve(
     answer = row.answer.strip()
     chunk_text = f"问题：{question}\n答复：{answer}"
 
+    reviewer_id = _resolve_user_id(db, user_id)
+    # reviewer_id 用于知识回流与审计字段；若传入 id 不存在则用回退用户，避免外键报错。
+
     # 先保证候选状态更新并提交：即使知识回流入库失败，前端也能看到已通过，演示不被阻塞
     row.status = "approved"
     row.question = question
-    row.reviewed_by = user_id
+    row.reviewed_by = reviewer_id
     row.reviewed_at = datetime.utcnow()
     db.commit()
 
@@ -237,7 +254,7 @@ def approve(
 
     try:
         chunk_hash = hashlib.sha256(chunk_text.encode("utf-8")).hexdigest()
-        source = _ensure_feedback_source(db, tenant_id, user_id)
+        source = _ensure_feedback_source(db, tenant_id, reviewer_id or user_id)
         source_id = source.id
         existing_chunk = db.execute(
             select(KnowledgeChunk).where(
@@ -256,7 +273,7 @@ def approve(
                     metadata_json={
                         "topic": "handoff_feedback",
                         "candidate_id": row.id,
-                        "approved_by": user_id,
+                        "approved_by": reviewer_id,
                     },
                     embedding_ref=f"handoff_feedback_{row.id}",
                 )
@@ -304,8 +321,9 @@ def reject(
     row = db.get(KbCandidate, cid)
     if not row or row.tenant_id != tenant_id:
         raise HTTPException(status_code=404, detail="candidate not found")
+    reviewer_id = _resolve_user_id(db, user_id)
     row.status = "rejected"
-    row.reviewed_by = user_id
+    row.reviewed_by = reviewer_id
     row.reviewed_at = datetime.utcnow()
     db.commit()
     return ok({"id": str(row.id), "status": row.status, "reason": payload.reason})
