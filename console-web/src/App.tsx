@@ -23,6 +23,8 @@ import {
   closeHandoff,
   createKnowledgeSource,
   getAccessToken,
+  getChatSessionDetail,
+  getChatSessions,
   getHandoffQueue,
   getHealth,
   getKbCandidates,
@@ -34,6 +36,8 @@ import {
   replyHandoff,
   setAuthTokens,
   type CandidateRejectInput,
+  type ChatSessionDetail,
+  type ChatSessionItem,
   type KbCandidateItem,
   type LoginInput,
   type KnowledgeSourceCreateInput,
@@ -94,6 +98,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [knowledgeRows, setKnowledgeRows] = useState<KnowledgeSourceItem[]>([]);
   const [handoffRows, setHandoffRows] = useState<HandoffQueueItem[]>([]);
+  const [sessionRows, setSessionRows] = useState<ChatSessionItem[]>([]);
   const [healthStatus, setHealthStatus] = useState<string>("-");
   const [candidateRows, setCandidateRows] = useState<KbCandidateItem[]>([]);
   const [createOpen, setCreateOpen] = useState(false);
@@ -106,6 +111,9 @@ export default function App() {
   const [rejectOpen, setRejectOpen] = useState(false);
   const [rejectLoading, setRejectLoading] = useState(false);
   const [activeCandidateId, setActiveCandidateId] = useState<string | null>(null);
+  const [sessionDetailOpen, setSessionDetailOpen] = useState(false);
+  const [sessionDetailLoading, setSessionDetailLoading] = useState(false);
+  const [activeSession, setActiveSession] = useState<ChatSessionDetail | null>(null);
   const [form] = Form.useForm<KnowledgeSourceCreateInput>();
   const [replyForm] = Form.useForm<HandoffReplyInput>();
   const [rejectForm] = Form.useForm<CandidateRejectInput>();
@@ -241,8 +249,8 @@ export default function App() {
 
   const handoffColumns: ColumnsType<HandoffQueueItem> = useMemo(
     () => [
-      { title: "Handoff ID", dataIndex: "id", key: "id", width: 160 },
-      { title: "Session ID", dataIndex: "session_id", key: "session_id", width: 160 },
+      { title: "转人工ID", dataIndex: "id", key: "id", width: 160 },
+      { title: "会话ID", dataIndex: "session_id", key: "session_id", width: 160 },
       {
         title: "状态",
         dataIndex: "status",
@@ -262,7 +270,7 @@ export default function App() {
               onClick={() => handleClaim(record.id)}
               loading={handoffActionLoadingId === record.id}
             >
-              Claim
+              认领
             </Button>
             <Button
               size="small"
@@ -270,7 +278,7 @@ export default function App() {
               onClick={() => openReplyModal(record.id)}
               loading={handoffActionLoadingId === record.id}
             >
-              Reply
+              回复
             </Button>
             <Button
               size="small"
@@ -278,13 +286,54 @@ export default function App() {
               onClick={() => handleClose(record.id)}
               loading={handoffActionLoadingId === record.id}
             >
-              Close
+              关闭
             </Button>
           </Space>
         ),
       },
     ],
     [handoffActionLoadingId]
+  );
+
+  const openSessionDetail = async (sessionId: string) => {
+    try {
+      setSessionDetailLoading(true);
+      const res = await getChatSessionDetail(sessionId);
+      setActiveSession(res.data ?? null);
+      setSessionDetailOpen(true);
+      setOutput(JSON.stringify(res, null, 2));
+    } catch (err) {
+      setOutput(`获取会话详情失败: ${String(err)}`);
+    } finally {
+      setSessionDetailLoading(false);
+    }
+  };
+
+  const sessionColumns: ColumnsType<ChatSessionItem> = useMemo(
+    () => [
+      { title: "会话ID", dataIndex: "session_id", key: "session_id", width: 160 },
+      { title: "渠道", dataIndex: "channel", key: "channel", width: 120 },
+      {
+        title: "状态",
+        dataIndex: "status",
+        key: "status",
+        width: 120,
+        render: (status: string) => <Tag color={status === "handoff" ? "orange" : "blue"}>{status || "-"}</Tag>,
+      },
+      { title: "访客ID", dataIndex: "visitor_id", key: "visitor_id", width: 170 },
+      { title: "最近一条消息", dataIndex: "last_message_preview", key: "last_message_preview" },
+      {
+        title: "操作",
+        key: "actions",
+        width: 120,
+        render: (_, record) => (
+          <Button size="small" onClick={() => void openSessionDetail(record.session_id)} loading={sessionDetailLoading}>
+            详情
+          </Button>
+        ),
+      },
+    ],
+    [sessionDetailLoading]
   );
 
   const openRejectModal = (candidateId: string) => {
@@ -326,7 +375,7 @@ export default function App() {
 
   const candidateColumns: ColumnsType<KbCandidateItem> = useMemo(
     () => [
-      { title: "Candidate ID", dataIndex: "id", key: "id", width: 180 },
+      { title: "候选ID", dataIndex: "id", key: "id", width: 180 },
       { title: "问题", dataIndex: "question", key: "question" },
       {
         title: "状态",
@@ -347,7 +396,7 @@ export default function App() {
               onClick={() => handleApproveCandidate(record.id)}
               loading={candidateActionLoadingId === record.id}
             >
-              Approve
+              通过
             </Button>
             <Button
               size="small"
@@ -355,7 +404,7 @@ export default function App() {
               onClick={() => openRejectModal(record.id)}
               loading={candidateActionLoadingId === record.id}
             >
-              Reject
+              驳回
             </Button>
           </Space>
         ),
@@ -504,6 +553,15 @@ export default function App() {
     }, "/api/v1/tm/handoff/queue");
   };
 
+  const runSessions = async () => {
+    await run(async () => {
+      const res = await getChatSessions({ limit: 20, channel: "web_widget" });
+      const rows = res.data?.list ?? res.data?.items ?? [];
+      setSessionRows(rows);
+      return res;
+    }, "/api/v1/tm/chat/admin/sessions");
+  };
+
   const runCandidates = async () => {
     await run(async () => {
       const res = await getKbCandidates("pending");
@@ -591,25 +649,28 @@ export default function App() {
         <Card>
           <Space wrap>
             <Button loading={loading} onClick={runHealth}>
-              Health
+              健康检查
             </Button>
             <Button loading={loading} onClick={runKnowledge}>
-              Knowledge Sources
+              知识源列表
             </Button>
             <Button loading={loading} onClick={runHandoff}>
-              Handoff Queue
+              转人工队列
+            </Button>
+            <Button loading={loading} onClick={runSessions}>
+              最近会话
             </Button>
             <Button loading={loading} onClick={runCandidates}>
-              KB Candidates
+              知识候选
             </Button>
           </Space>
           <div style={{ marginTop: 12 }}>
-            <Text>Health: </Text>
+            <Text>健康状态: </Text>
             <Tag color={healthStatus === "ok" ? "green" : "default"}>{healthStatus}</Tag>
           </div>
         </Card>
         <Card
-          title="Knowledge Sources"
+          title="知识源列表"
           extra={
             <Button type="primary" onClick={() => setCreateOpen(true)}>
               新增知识源
@@ -624,7 +685,7 @@ export default function App() {
             size="small"
           />
         </Card>
-        <Card title="Handoff Queue">
+        <Card title="转人工队列">
           <Table
             rowKey="id"
             columns={handoffColumns}
@@ -633,7 +694,16 @@ export default function App() {
             size="small"
           />
         </Card>
-        <Card title="Knowledge Base Candidates">
+        <Card title="最近会话">
+          <Table
+            rowKey="session_id"
+            columns={sessionColumns}
+            dataSource={sessionRows}
+            pagination={{ pageSize: 8 }}
+            size="small"
+          />
+        </Card>
+        <Card title="知识候选列表">
           <Table
             rowKey="id"
             columns={candidateColumns}
@@ -764,6 +834,37 @@ export default function App() {
             <Checkbox>标记为知识回流候选</Checkbox>
           </Form.Item>
         </Form>
+      </Modal>
+
+      <Modal
+        title={`会话详情 ${activeSession?.session_id ?? ""}`}
+        open={sessionDetailOpen}
+        onCancel={() => setSessionDetailOpen(false)}
+        footer={null}
+      >
+        <Space direction="vertical" style={{ width: "100%" }}>
+          <Text>
+            状态：<Tag>{activeSession?.status ?? "-"}</Tag>
+          </Text>
+          <Card size="small" title="消息列表">
+            {activeSession?.messages?.length ? (
+              <Space direction="vertical" style={{ width: "100%" }}>
+                {activeSession.messages.map((msg) => (
+                  <Card key={msg.id} size="small">
+                    <Space direction="vertical" size={4} style={{ width: "100%" }}>
+                      <Text strong>
+                        {msg.role} · {msg.created_at ?? "-"}
+                      </Text>
+                      <Text>{msg.content}</Text>
+                    </Space>
+                  </Card>
+                ))}
+              </Space>
+            ) : (
+              <Text type="secondary">暂无消息</Text>
+            )}
+          </Card>
+        </Space>
       </Modal>
 
       <Modal

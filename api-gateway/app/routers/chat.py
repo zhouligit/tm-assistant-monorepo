@@ -39,6 +39,26 @@ async def create_session(
     )
 
 
+@router.get("/admin/sessions", response_model=ApiResponse)
+async def list_sessions(
+    limit: int = 20,
+    status: str | None = None,
+    channel: str | None = None,
+    claims: dict = Depends(require_current_user),
+) -> dict:
+    params: dict[str, int | str] = {"limit": limit}
+    if status:
+        params["status"] = status
+    if channel:
+        params["channel"] = channel
+    return await forward(
+        "GET",
+        "/internal/core/chat/sessions",
+        params=params,
+        headers=build_core_headers(claims),
+    )
+
+
 @router.post("/sessions/{session_id}/messages", response_model=ApiResponse)
 async def send_message(
     session_id: str, payload: ChatMessageRequest, claims: dict | None = Depends(optional_current_user)

@@ -45,6 +45,31 @@ export type CandidateRejectInput = {
   reason?: string;
 };
 
+export type ChatSessionItem = {
+  session_id: string;
+  status: string;
+  channel: string;
+  visitor_id: string;
+  started_at?: string | null;
+  updated_at?: string | null;
+  last_message_role?: string | null;
+  last_message_preview?: string;
+  last_message_at?: string | null;
+};
+
+export type ChatSessionMessage = {
+  id: string;
+  role: string;
+  content: string;
+  created_at?: string | null;
+};
+
+export type ChatSessionDetail = {
+  session_id: string;
+  status: string;
+  messages: ChatSessionMessage[];
+};
+
 export type LoginInput = {
   email: string;
   password: string;
@@ -276,4 +301,19 @@ export function rejectKbCandidate(candidateId: string, payload: CandidateRejectI
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+export function getChatSessions(params?: { limit?: number; status?: string; channel?: string }) {
+  const query = new URLSearchParams();
+  query.set("limit", String(params?.limit ?? 20));
+  if (params?.status) query.set("status", params.status);
+  if (params?.channel) query.set("channel", params.channel);
+  return request<{
+    list?: ChatSessionItem[];
+    items?: ChatSessionItem[];
+  }>(`/api/v1/tm/chat/admin/sessions?${query.toString()}`);
+}
+
+export function getChatSessionDetail(sessionId: string) {
+  return request<ChatSessionDetail>(`/api/v1/tm/chat/sessions/${encodeURIComponent(sessionId)}`);
 }

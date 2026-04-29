@@ -80,6 +80,49 @@ def create_session(
     return ok({"session_id": str(session.id), "status": session.status})
 
 
+@router.get("/sessions", response_model=ApiResponse)
+def list_sessions(
+    limit: int = 20,
+    status: str | None = None,
+    channel: str | None = None,
+    db: Session = Depends(get_db),
+    tenant_id: int = Depends(get_tenant_id),
+) -> dict:
+    safe_limit = max(1, min(limit, 100))
+    stmt = (
+        select(ChatSession)
+        .where(ChatSession.tenant_id == tenant_id)
+        .order_by(ChatSession.updated_at.desc(), ChatSession.id.desc())
+    )
+    if status:
+        stmt = stmt.where(ChatSession.status == status)
+    if channel:
+        stmt = stmt.where(ChatSession.channel == channel)
+    sessions = db.execute(stmt.limit(safe_limit)).scalars().all()
+    result: list[dict] = []
+    for session in sessions:
+        latest_msg = db.execute(
+            select(ChatMessage)
+            .where(ChatMessage.session_id == session.id, ChatMessage.tenant_id == tenant_id)
+            .order_by(ChatMessage.id.desc())
+            .limit(1)
+        ).scalar_one_or_none()
+        result.append(
+            {
+                "session_id": str(session.id),
+                "status": session.status,
+                "channel": session.channel,
+                "visitor_id": session.visitor_id,
+                "started_at": session.started_at.isoformat() if session.started_at else None,
+                "updated_at": session.updated_at.isoformat() if session.updated_at else None,
+                "last_message_role": latest_msg.role if latest_msg else None,
+                "last_message_preview": latest_msg.content[:120] if latest_msg else "",
+                "last_message_at": latest_msg.created_at.isoformat() if latest_msg and latest_msg.created_at else None,
+            }
+        )
+    return ok({"list": result, "total": len(result)})
+
+
 @router.post("/sessions/{session_id}/messages", response_model=ApiResponse)
 def reply(
     session_id: str,
