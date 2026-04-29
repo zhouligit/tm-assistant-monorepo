@@ -223,44 +223,70 @@ def approve(
     question = _derive_question_from_candidate(db, row, tenant_id)
     answer = row.answer.strip()
     chunk_text = f"问题：{question}\n答复：{answer}"
-    chunk_hash = hashlib.sha256(chunk_text.encode("utf-8")).hexdigest()
-    source = _ensure_feedback_source(db, tenant_id, user_id)
-    existing_chunk = db.execute(
-        select(KnowledgeChunk).where(
-            KnowledgeChunk.tenant_id == tenant_id,
-            KnowledgeChunk.source_id == source.id,
-            KnowledgeChunk.chunk_hash == chunk_hash,
-        )
-    ).scalar_one_or_none()
-    if existing_chunk is None:
-        chunk = KnowledgeChunk(
-            tenant_id=tenant_id,
-            source_id=source.id,
-            chunk_text=chunk_text,
-            chunk_hash=chunk_hash,
-            metadata_json={
-                "topic": "handoff_feedback",
-                "candidate_id": row.id,
-                "approved_by": user_id,
-            },
-            embedding_ref=f"handoff_feedback_{row.id}",
-        )
-        db.add(chunk)
-    source.status = "ready"
-    source.last_error = None
-    source.last_synced_at = datetime.utcnow()
+
+    # 先保证候选状态更新并提交：即使知识回流入库失败，前端也能看到已通过，演示不被阻塞
     row.status = "approved"
     row.question = question
     row.reviewed_by = user_id
     row.reviewed_at = datetime.utcnow()
-    ticket_id_str = source_question.removeprefix("handoff:")
-    if ticket_id_str.isdigit():
-        ticket = db.get(HandoffTicket, int(ticket_id_str))
-        if ticket and ticket.tenant_id == tenant_id:
-            ticket.status = "resolved"
-            ticket.resolved_at = datetime.utcnow()
     db.commit()
-    return ok({"id": str(row.id), "status": row.status, "synced_to_kb": True, "source_id": str(source.id)})
+
+    synced_to_kb = False
+    source_id: int | None = None
+    error: str | None = None
+
+    try:
+        chunk_hash = hashlib.sha256(chunk_text.encode("utf-8")).hexdigest()
+        source = _ensure_feedback_source(db, tenant_id, user_id)
+        source_id = source.id
+        existing_chunk = db.execute(
+            select(KnowledgeChunk).where(
+                KnowledgeChunk.tenant_id == tenant_id,
+                KnowledgeChunk.source_id == source.id,
+                KnowledgeChunk.chunk_hash == chunk_hash,
+            )
+        ).scalar_one_or_none()
+        if existing_chunk is None:
+            db.add(
+                KnowledgeChunk(
+                    tenant_id=tenant_id,
+                    source_id=source.id,
+                    chunk_text=chunk_text,
+                    chunk_hash=chunk_hash,
+                    metadata_json={
+                        "topic": "handoff_feedback",
+                        "candidate_id": row.id,
+                        "approved_by": user_id,
+                    },
+                    embedding_ref=f"handoff_feedback_{row.id}",
+                )
+            )
+        source.status = "ready"
+        source.last_error = None
+        source.last_synced_at = datetime.utcnow()
+
+        ticket_id_str = source_question.removeprefix("handoff:")
+        if ticket_id_str.isdigit():
+            ticket = db.get(HandoffTicket, int(ticket_id_str))
+            if ticket and ticket.tenant_id == tenant_id:
+                ticket.status = "resolved"
+                ticket.resolved_at = datetime.utcnow()
+
+        db.commit()
+        synced_to_kb = True
+    except Exception as exc:  # best-effort: upsert failure shouldn't block approval
+        db.rollback()
+        error = str(exc)
+
+    return ok(
+        {
+            "id": str(row.id),
+            "status": row.status,
+            "synced_to_kb": synced_to_kb,
+            "source_id": str(source_id) if source_id is not None else None,
+            "error": error,
+        }
+    )
 
 
 @router.post("/candidates/{candidate_id}/reject", response_model=ApiResponse)
