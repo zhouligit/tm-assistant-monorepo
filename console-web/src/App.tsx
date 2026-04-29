@@ -617,7 +617,7 @@ export default function App() {
 
   const runCandidates = async () => {
     await run(async () => {
-      const res = await getKbCandidates("pending");
+      const res = await getKbCandidates();
       const rows = res.data?.list ?? res.data?.items ?? [];
       setCandidateRows(rows);
       return res;
