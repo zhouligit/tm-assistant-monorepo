@@ -56,6 +56,27 @@ type RequestHistoryItem = {
   requestId: string;
 };
 
+const HANDOFF_STATUS_LABEL: Record<string, string> = {
+  queued: "待处理",
+  claimed: "处理中",
+  resolved: "已完成",
+};
+
+const HANDOFF_REASON_LABEL: Record<string, string> = {
+  low_confidence: "AI不确定，转人工兜底",
+};
+
+const SESSION_STATUS_LABEL: Record<string, string> = {
+  open: "进行中",
+  handoff: "转人工中",
+  closed: "已结束",
+};
+
+function toLabel(value: string | undefined | null, mapper: Record<string, string>): string {
+  if (!value) return "-";
+  return mapper[value] ?? value;
+}
+
 export default function App() {
   const [authed, setAuthed] = useState<boolean>(Boolean(getAccessToken()));
   const [currentUser, setCurrentUser] = useState<{ name: string; role: string } | null>(null);
@@ -252,13 +273,22 @@ export default function App() {
       { title: "转人工ID", dataIndex: "id", key: "id", width: 160 },
       { title: "会话ID", dataIndex: "session_id", key: "session_id", width: 160 },
       {
-        title: "状态",
+        title: "处理进度",
         dataIndex: "status",
         key: "status",
         width: 120,
-        render: (status: string) => <Tag color="blue">{status || "-"}</Tag>,
+        render: (status: string) => (
+          <Tag color={status === "queued" ? "orange" : status === "claimed" ? "blue" : "green"}>
+            {toLabel(status, HANDOFF_STATUS_LABEL)}
+          </Tag>
+        ),
       },
-      { title: "原因", dataIndex: "reason", key: "reason" },
+      {
+        title: "触发原因",
+        dataIndex: "reason",
+        key: "reason",
+        render: (reason: string) => toLabel(reason, HANDOFF_REASON_LABEL),
+      },
       {
         title: "操作",
         key: "actions",
@@ -314,11 +344,15 @@ export default function App() {
       { title: "会话ID", dataIndex: "session_id", key: "session_id", width: 160 },
       { title: "渠道", dataIndex: "channel", key: "channel", width: 120 },
       {
-        title: "状态",
+        title: "会话状态",
         dataIndex: "status",
         key: "status",
         width: 120,
-        render: (status: string) => <Tag color={status === "handoff" ? "orange" : "blue"}>{status || "-"}</Tag>,
+        render: (status: string) => (
+          <Tag color={status === "handoff" ? "orange" : status === "closed" ? "default" : "blue"}>
+            {toLabel(status, SESSION_STATUS_LABEL)}
+          </Tag>
+        ),
       },
       { title: "访客ID", dataIndex: "visitor_id", key: "visitor_id", width: 170 },
       { title: "最近一条消息", dataIndex: "last_message_preview", key: "last_message_preview" },
@@ -844,7 +878,7 @@ export default function App() {
       >
         <Space direction="vertical" style={{ width: "100%" }}>
           <Text>
-            状态：<Tag>{activeSession?.status ?? "-"}</Tag>
+            状态：<Tag>{toLabel(activeSession?.status, SESSION_STATUS_LABEL)}</Tag>
           </Text>
           <Card size="small" title="消息列表">
             {activeSession?.messages?.length ? (
