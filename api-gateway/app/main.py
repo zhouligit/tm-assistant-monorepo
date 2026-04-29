@@ -1,5 +1,6 @@
 import logging
 import os
+from contextlib import asynccontextmanager
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request
@@ -18,9 +19,18 @@ from app.routers import (
     retrieval_router,
 )
 from app.schemas import fail, request_id_ctx
+from app.security_startup import log_weak_configuration_warnings
 
-app = FastAPI(title="API Gateway")
 logger = logging.getLogger("api-gateway")
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    log_weak_configuration_warnings()
+    yield
+
+
+app = FastAPI(title="API Gateway", lifespan=lifespan)
 
 _cors_origins_raw = os.getenv(
     "CORS_ALLOW_ORIGINS",

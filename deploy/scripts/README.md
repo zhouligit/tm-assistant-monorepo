@@ -74,3 +74,30 @@ DOMAIN=your-domain.com REPO_URL=https://github.com/yourname/tm-assistant-monorep
 脚本执行后建议继续：
 - 导入 MySQL migration + seed
 - 按 `docs/deploy-https-certbot-shortlist.md` 启用 HTTPS
+
+## 5) 运维保障（最小）
+
+### MySQL 逻辑备份
+- 文件：`backup-mysql-minimal.sh`
+- 从 `ENV_FILE` 读取 `MYSQL_DSN`，`mysqldump | gzip` 到 `BACKUP_DIR`，删除超过 `KEEP_DAYS` 天的旧文件。
+- 依赖：`mysqldump`（如 `apt install mysql-client`）。
+
+```bash
+ENV_FILE=/opt/tm-assistant-monorepo/.env \
+BACKUP_DIR=/opt/backups/tm-assistant KEEP_DAYS=7 \
+bash deploy/scripts/backup-mysql-minimal.sh
+```
+
+### 关键接口延迟 / 可用性
+- 文件：`check-critical-endpoints.sh`
+- 探测网关 `/api/v1/tm/health`、core `/health`、connector `/health`；任一非 200 或耗时超过 `TM_HEALTH_MAX_SECONDS`（默认 3s）则 **退出码 1**（便于 cron 告警）。
+
+```bash
+TM_HEALTH_MAX_SECONDS=3 bash deploy/scripts/check-critical-endpoints.sh
+echo $?
+```
+
+### 启动时弱口令 / 占位告警
+- 实现位置：`api-gateway` 进程启动时（`lifespan`）扫描环境变量：若 `MYSQL_DSN` 密码为已知弱口令、`REDIS_URL` 含默认 redis 密码、`JWT_SECRET` 过短或为占位符，则向日志输出 **WARNING**（便于 `journalctl` / 外部采集）。
+- 可选：在 `.env` 中设置 `TM_WEAK_SECRET_MARKERS`（逗号分隔）扩展弱口令名单。
+- 本地开发若不想刷屏，可设 `TM_SKIP_WEAK_CONFIG_CHECK=true`（**勿用于生产**）。
