@@ -77,6 +77,7 @@ async function sendMessage(config: WidgetConfig, sessionId: string, content: str
 function App() {
   const config = useMemo(() => DEFAULT_CONFIG, []);
   const [sessionId, setSessionId] = useState<string>("");
+  const [handoffActive, setHandoffActive] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([
     { role: "assistant", content: "你好，我是课程顾问助手。请问你想咨询哪个课程？" },
   ]);
@@ -98,6 +99,9 @@ function App() {
         setSessionId(sid);
       }
       const result = await sendMessage(config, sid, trimmed);
+      if (result.handoffSuggested) {
+        setHandoffActive(true);
+      }
       setMessages((prev) => [
         ...prev,
         {
@@ -130,6 +134,9 @@ function App() {
     >
       <div style={{ padding: "12px 14px", background: "#1677ff", color: "#fff", fontWeight: 600 }}>
         教育课程咨询助手
+        <div style={{ marginTop: 4, fontSize: 12, fontWeight: 400, opacity: 0.95 }}>
+          会话ID: {sessionId || "-"} {handoffActive ? "| 当前状态：转人工跟进中" : ""}
+        </div>
       </div>
       <div style={{ padding: 12, height: 340, overflowY: "auto", background: "#fafafa" }}>
         {messages.map((msg, idx) => (
@@ -159,6 +166,11 @@ function App() {
       </div>
       <div style={{ padding: 10, borderTop: "1px solid #f0f0f0" }}>
         {error ? <div style={{ color: "#cf1322", fontSize: 12, marginBottom: 8 }}>{error}</div> : null}
+        {handoffActive ? (
+          <div style={{ color: "#cf1322", fontSize: 12, marginBottom: 8 }}>
+            已进入人工跟进队列，客服将尽快联系你。你也可以继续补充问题信息。
+          </div>
+        ) : null}
         <div style={{ display: "flex", gap: 8 }}>
           <input
             value={input}

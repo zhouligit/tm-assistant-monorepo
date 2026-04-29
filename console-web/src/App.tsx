@@ -72,6 +72,12 @@ const SESSION_STATUS_LABEL: Record<string, string> = {
   closed: "已结束",
 };
 
+const CANDIDATE_STATUS_LABEL: Record<string, string> = {
+  pending: "待审核",
+  approved: "已通过",
+  rejected: "已驳回",
+};
+
 function toLabel(value: string | undefined | null, mapper: Record<string, string>): string {
   if (!value) return "-";
   return mapper[value] ?? value;
@@ -188,6 +194,7 @@ export default function App() {
           name: res.data?.name ?? "unknown",
           role: res.data?.role ?? "unknown",
         });
+        await Promise.all([runHealth(), runKnowledge(), runHandoff(), runSessions(), runCandidates()]);
       } catch (err) {
         if (err instanceof ApiError && err.status === 401) {
           clearAccessToken();
@@ -316,7 +323,7 @@ export default function App() {
               onClick={() => handleClose(record.id)}
               loading={handoffActionLoadingId === record.id}
             >
-              关闭
+              完成处理
             </Button>
           </Space>
         ),
@@ -412,11 +419,21 @@ export default function App() {
       { title: "候选ID", dataIndex: "id", key: "id", width: 180 },
       { title: "问题", dataIndex: "question", key: "question" },
       {
+        title: "人工回复",
+        dataIndex: "answer",
+        key: "answer",
+        render: (value: string | undefined) => (value ? value.slice(0, 90) : "-"),
+      },
+      {
         title: "状态",
         dataIndex: "status",
         key: "status",
         width: 120,
-        render: (status: string) => <Tag color="purple">{status || "-"}</Tag>,
+        render: (status: string) => (
+          <Tag color={status === "approved" ? "green" : status === "rejected" ? "red" : "purple"}>
+            {toLabel(status, CANDIDATE_STATUS_LABEL)}
+          </Tag>
+        ),
       },
       {
         title: "操作",
@@ -429,6 +446,7 @@ export default function App() {
               type="primary"
               onClick={() => handleApproveCandidate(record.id)}
               loading={candidateActionLoadingId === record.id}
+              disabled={record.status !== "pending"}
             >
               通过
             </Button>
@@ -437,6 +455,7 @@ export default function App() {
               danger
               onClick={() => openRejectModal(record.id)}
               loading={candidateActionLoadingId === record.id}
+              disabled={record.status !== "pending"}
             >
               驳回
             </Button>
@@ -605,6 +624,10 @@ export default function App() {
     }, "/api/v1/tm/kb-candidates");
   };
 
+  const refreshDashboard = async () => {
+    await Promise.all([runHealth(), runKnowledge(), runHandoff(), runSessions(), runCandidates()]);
+  };
+
   const submitCreateKnowledgeSource = async () => {
     try {
       const values = await form.validateFields();
@@ -668,6 +691,7 @@ export default function App() {
               当前用户：{currentUser?.name ?? "-"} / {currentUser?.role ?? "-"}
             </Text>
             <Button onClick={runMe}>刷新用户</Button>
+            <Button onClick={() => void refreshDashboard()}>刷新看板</Button>
             <Button danger onClick={handleLogout}>
               退出登录
             </Button>
