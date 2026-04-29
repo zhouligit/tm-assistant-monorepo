@@ -18,11 +18,21 @@ from app.schemas import ApiResponse, ok
 router = APIRouter(prefix="/internal/core/knowledge", tags=["knowledge"])
 
 
+def _zh_ngrams(text: str, n: int = 2) -> set[str]:
+    chars = [ch for ch in text if "\u4e00" <= ch <= "\u9fff"]
+    if len(chars) < n:
+        return set(chars)
+    return {"".join(chars[i : i + n]) for i in range(len(chars) - n + 1)}
+
+
 def _tokenize(text: str) -> set[str]:
-    parts = [x for x in re.split(r"\W+", text.lower()) if x]
-    if parts:
-        return set(parts)
-    return set(text.strip())
+    normalized = text.lower().strip()
+    latin_tokens = {x for x in re.split(r"[^a-z0-9]+", normalized) if x}
+    zh_tokens = _zh_ngrams(normalized, 2)
+    tokens = latin_tokens | zh_tokens
+    if tokens:
+        return tokens
+    return {normalized} if normalized else set()
 
 
 def _score(query_tokens: set[str], query: str, text: str) -> float:
