@@ -52,3 +52,8 @@ class CandidateRejectRequest(BaseModel):
 class RetrievalDebugRequest(BaseModel):
     query: str
     top_k: int = 5
+
+
+class QuotaCheckRequest(BaseModel):
+    action: str = "chat_message"
+    amount: int = 1

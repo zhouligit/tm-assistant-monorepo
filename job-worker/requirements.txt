@@ -1,3 +1,5 @@
 redis
 pydantic
 python-dotenv
+sqlalchemy
+pymysql

@@ -1,3 +1,4 @@
+import re
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -5,16 +6,32 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.entities import KnowledgeSource
+from app.entities import KnowledgeChunk, KnowledgeSource
 from app.models import (
     KnowledgeSourceCreatePayload,
     KnowledgeSourcePatchPayload,
     RetrievalDebugPayload,
 )
 from app.request_context import get_tenant_id, get_user_id
-from app.schemas import ApiResponse, not_implemented, ok
+from app.schemas import ApiResponse, ok
 
 router = APIRouter(prefix="/internal/core/knowledge", tags=["knowledge"])
+
+
+def _tokenize(text: str) -> set[str]:
+    parts = [x for x in re.split(r"\W+", text.lower()) if x]
+    if parts:
+        return set(parts)
+    return set(text.strip())
+
+
+def _score(query_tokens: set[str], query: str, text: str) -> float:
+    if not text:
+        return 0.0
+    tokens = _tokenize(text)
+    overlap = len(query_tokens & tokens)
+    contains_bonus = 1.5 if query and query in text else 0.0
+    return overlap + contains_bonus
 
 
 def _parse_source_id(source_id: str) -> int:
@@ -142,10 +159,63 @@ def delete_source(
 
 
 @router.get("/chunks", response_model=ApiResponse)
-def list_chunks(source_id: str | None = None, keyword: str | None = None) -> dict:
-    return not_implemented(f"list_chunks:source={source_id},keyword={keyword}")
+def list_chunks(
+    source_id: str | None = None,
+    keyword: str | None = None,
+    limit: int = 20,
+    db: Session = Depends(get_db),
+    tenant_id: int = Depends(get_tenant_id),
+) -> dict:
+    safe_limit = max(1, min(limit, 100))
+    stmt = select(KnowledgeChunk).where(KnowledgeChunk.tenant_id == tenant_id).order_by(KnowledgeChunk.id.desc())
+    if source_id:
+        stmt = stmt.where(KnowledgeChunk.source_id == _parse_source_id(source_id))
+    rows = db.execute(stmt).scalars().all()
+    if keyword:
+        rows = [x for x in rows if keyword.lower() in x.chunk_text.lower()]
+    rows = rows[:safe_limit]
+    data = [
+        {
+            "id": str(x.id),
+            "source_id": str(x.source_id),
+            "chunk_text": x.chunk_text,
+            "metadata": x.metadata_json,
+            "embedding_ref": x.embedding_ref,
+        }
+        for x in rows
+    ]
+    return ok({"list": data, "total": len(data)})
 
 
 @router.post("/retrieval/debug", response_model=ApiResponse)
-def retrieval_debug(payload: RetrievalDebugPayload) -> dict:
-    return not_implemented("retrieval_debug")
+def retrieval_debug(
+    payload: RetrievalDebugPayload,
+    db: Session = Depends(get_db),
+    tenant_id: int = Depends(get_tenant_id),
+) -> dict:
+    safe_top_k = max(1, min(payload.top_k, 20))
+    rows = db.execute(
+        select(KnowledgeChunk).where(KnowledgeChunk.tenant_id == tenant_id).order_by(KnowledgeChunk.id.desc())
+    ).scalars().all()
+    query_tokens = _tokenize(payload.query)
+    ranked = sorted(rows, key=lambda x: _score(query_tokens, payload.query, x.chunk_text), reverse=True)
+    top = ranked[:safe_top_k]
+    candidates = [
+        {
+            "chunk_id": str(x.id),
+            "source_id": str(x.source_id),
+            "score": round(_score(query_tokens, payload.query, x.chunk_text), 4),
+            "snippet": x.chunk_text[:160],
+            "metadata": x.metadata_json,
+        }
+        for x in top
+    ]
+    context = "\n".join([x.chunk_text for x in top])
+    return ok(
+        {
+            "query": payload.query,
+            "top_k": safe_top_k,
+            "candidates": candidates,
+            "selected_context": context[:1000],
+        }
+    )
