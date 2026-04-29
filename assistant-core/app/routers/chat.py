@@ -47,10 +47,36 @@ def _build_answer_from_chunks(query_text: str, chunks: list[KnowledgeChunk]) -> 
     if not chunks:
         return ("暂时没有检索到匹配知识，建议转人工继续跟进。", 0.2, [])
     query_tokens = _tokenize(query_text)
-    ranked = sorted(chunks, key=lambda x: _score_chunk(query_tokens, query_text, x.chunk_text), reverse=True)
+    def _handoff_feedback_bonus(chunk: KnowledgeChunk) -> float:
+        # 人工回流知识默认更可信：提升其检索排序与置信度，避免重复触发转人工。
+        if not chunk.metadata_json:
+            return 0.0
+        topic = chunk.metadata_json.get("topic")
+        return 3.0 if topic == "handoff_feedback" else 0.0
+
+    ranked = sorted(
+        chunks,
+        key=lambda x: _score_chunk(query_tokens, query_text, x.chunk_text) + _handoff_feedback_bonus(x),
+        reverse=True,
+    )
     top_chunks = ranked[:MAX_CITATIONS]
-    top_score = _score_chunk(query_tokens, query_text, top_chunks[0].chunk_text)
+    top_score = _score_chunk(query_tokens, query_text, top_chunks[0].chunk_text) + _handoff_feedback_bonus(top_chunks[0])
     confidence = min(0.95, 0.25 + top_score * 0.15)
+    top_topic = (top_chunks[0].metadata_json or {}).get("topic") if top_chunks else None
+    if top_topic == "handoff_feedback" and confidence < AUTO_HANDOFF_THRESHOLD:
+        # 人工回流知识优先保证给出答案（演示场景避免反复建议转人工）。
+        confidence = AUTO_HANDOFF_THRESHOLD + 0.1
+
+    if top_topic == "handoff_feedback":
+        # chunk_text 格式：问题：...\n答复：...
+        m = re.split(r"答复：", top_chunks[0].chunk_text, maxsplit=1)
+        answer_body = m[1].strip() if len(m) == 2 else top_chunks[0].chunk_text
+        answer = answer_body
+        citations = [
+            {"chunk_id": str(chunk.id), "source_id": str(chunk.source_id), "snippet": chunk.chunk_text[:120]}
+            for chunk in top_chunks
+        ]
+        return (answer, round(confidence, 4), citations)
     citations = [
         {"chunk_id": str(chunk.id), "source_id": str(chunk.source_id), "snippet": chunk.chunk_text[:120]}
         for chunk in top_chunks

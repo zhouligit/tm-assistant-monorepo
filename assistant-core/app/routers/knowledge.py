@@ -208,13 +208,23 @@ def retrieval_debug(
         select(KnowledgeChunk).where(KnowledgeChunk.tenant_id == tenant_id).order_by(KnowledgeChunk.id.desc())
     ).scalars().all()
     query_tokens = _tokenize(payload.query)
-    ranked = sorted(rows, key=lambda x: _score(query_tokens, payload.query, x.chunk_text), reverse=True)
+    def _handoff_feedback_bonus(chunk: KnowledgeChunk) -> float:
+        if not chunk.metadata_json:
+            return 0.0
+        topic = chunk.metadata_json.get("topic")
+        return 3.0 if topic == "handoff_feedback" else 0.0
+
+    ranked = sorted(
+        rows,
+        key=lambda x: _score(query_tokens, payload.query, x.chunk_text) + _handoff_feedback_bonus(x),
+        reverse=True,
+    )
     top = ranked[:safe_top_k]
     candidates = [
         {
             "chunk_id": str(x.id),
             "source_id": str(x.source_id),
-            "score": round(_score(query_tokens, payload.query, x.chunk_text), 4),
+            "score": round(_score(query_tokens, payload.query, x.chunk_text) + _handoff_feedback_bonus(x), 4),
             "snippet": x.chunk_text[:160],
             "metadata": x.metadata_json,
         }
