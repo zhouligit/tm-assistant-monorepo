@@ -48,11 +48,24 @@ def _build_answer_from_chunks(query_text: str, chunks: list[KnowledgeChunk]) -> 
         return ("暂时没有检索到匹配知识，建议转人工继续跟进。", 0.2, [])
     query_tokens = _tokenize(query_text)
     def _handoff_feedback_bonus(chunk: KnowledgeChunk) -> float:
-        # 人工回流知识默认更可信：提升其检索排序与置信度，避免重复触发转人工。
+        # 人工回流知识只在“问题部分”与用户提问相近时才加权，避免所有问题都命中回流答案。
         if not chunk.metadata_json:
             return 0.0
-        topic = chunk.metadata_json.get("topic")
-        return 3.0 if topic == "handoff_feedback" else 0.0
+        if chunk.metadata_json.get("topic") != "handoff_feedback":
+            return 0.0
+        # chunk_text 格式：问题：...\n答复：...
+        m = re.search(r"问题：(.*?)\\n答复：", chunk.chunk_text or "", flags=re.S)
+        if not m:
+            return 0.0
+        q = m.group(1).strip()
+        if not q:
+            return 0.0
+        q_tokens = _tokenize(q)
+        overlap = len(query_tokens & q_tokens)
+        if overlap <= 0:
+            return 0.0
+        # 重叠越多，加权越高，但上限较小
+        return min(1.0, 0.3 + overlap * 0.4)
 
     ranked = sorted(
         chunks,
@@ -63,10 +76,6 @@ def _build_answer_from_chunks(query_text: str, chunks: list[KnowledgeChunk]) -> 
     top_score = _score_chunk(query_tokens, query_text, top_chunks[0].chunk_text) + _handoff_feedback_bonus(top_chunks[0])
     confidence = min(0.95, 0.25 + top_score * 0.15)
     top_topic = (top_chunks[0].metadata_json or {}).get("topic") if top_chunks else None
-    if top_topic == "handoff_feedback" and confidence < AUTO_HANDOFF_THRESHOLD:
-        # 人工回流知识优先保证给出答案（演示场景避免反复建议转人工）。
-        confidence = AUTO_HANDOFF_THRESHOLD + 0.1
-
     if top_topic == "handoff_feedback":
         # chunk_text 格式：问题：...\n答复：...
         m = re.split(r"答复：", top_chunks[0].chunk_text, maxsplit=1)
@@ -76,6 +85,9 @@ def _build_answer_from_chunks(query_text: str, chunks: list[KnowledgeChunk]) -> 
             {"chunk_id": str(chunk.id), "source_id": str(chunk.source_id), "snippet": chunk.chunk_text[:120]}
             for chunk in top_chunks
         ]
+        # 置信度不够时仍走兜底策略，避免“乱答”（否则会导致所有问题都落到回流答案）。
+        if confidence < AUTO_HANDOFF_THRESHOLD:
+            return ("我找到了部分相关信息，但置信度不高，建议人工继续跟进。", round(confidence, 4), citations)
         return (answer, round(confidence, 4), citations)
     citations = [
         {"chunk_id": str(chunk.id), "source_id": str(chunk.source_id), "snippet": chunk.chunk_text[:120]}

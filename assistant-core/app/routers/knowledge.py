@@ -209,10 +209,20 @@ def retrieval_debug(
     ).scalars().all()
     query_tokens = _tokenize(payload.query)
     def _handoff_feedback_bonus(chunk: KnowledgeChunk) -> float:
-        if not chunk.metadata_json:
+        # 人工回流知识只在“问题部分”与用户提问相近时才加权，避免所有问题都命中回流答案。
+        if not chunk.metadata_json or chunk.metadata_json.get("topic") != "handoff_feedback":
             return 0.0
-        topic = chunk.metadata_json.get("topic")
-        return 3.0 if topic == "handoff_feedback" else 0.0
+        m = re.search(r"问题：(.*?)\\n答复：", chunk.chunk_text or "", flags=re.S)
+        if not m:
+            return 0.0
+        q = m.group(1).strip()
+        if not q:
+            return 0.0
+        q_tokens = _tokenize(q)
+        overlap = len(query_tokens & q_tokens)
+        if overlap <= 0:
+            return 0.0
+        return min(1.0, 0.3 + overlap * 0.4)
 
     ranked = sorted(
         rows,
