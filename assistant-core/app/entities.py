@@ -31,6 +31,20 @@ class KnowledgeSource(Base):
     )
 
 
+class User(Base):
+    """
+    Minimal mapping for foreign key resolution.
+
+    Some tables (e.g. knowledge_sources.created_by) declare ForeignKey("users.id").
+    assistant-core does not fully own the user model, but we still need the `users` table
+    declared in metadata so SQLAlchemy can resolve the FK target.
+    """
+
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+
+
 class KnowledgeChunk(Base):
     __tablename__ = "knowledge_chunks"
 
